@@ -19,32 +19,44 @@ public class UDPMulticast {
         
         JSONObject obj = new JSONObject();
         
-        //cria buffer de comunicação
-        BufferedReader inBufferedReader = new BufferedReader(new InputStreamReader(System.in));
+        //String chave = "fZMyRo5fUEAz5mUCrfnpLKoIlz5TSTF7";
+        //https://www.javacodegeeks.com/2018/03/aes-encryption-and-decryption-in-javacbc-mode.html
+        
+        String multicastIP, porta;
+        
+        //cria buffer de comunicação para chat
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
         
         try {
-            // Cria um socket para se conectar ao servidor
+            //cria um socket para se conectar ao servidor
             Socket clienteSocket = new Socket("localhost", 12345);
             
-            // Cria um fluxo de entrada para receber dados do servidor
+            //cria um fluxo de entrada para receber dados do servidor
             BufferedReader entrada = new BufferedReader(new InputStreamReader(clienteSocket.getInputStream()));
 
-            // Cria um fluxo de saída para enviar dados para o servidor
+            //cria um fluxo de saída para enviar dados para o servidor
             PrintWriter saida = new PrintWriter(clienteSocket.getOutputStream(), true);
             
-            // Envia uma mensagem para o servidor
+            //envia uma mensagem para o servidor
             String mensagemParaServidor = "Olá, servidor!";
             saida.println(mensagemParaServidor);
 
-            // Lê a resposta do servidor
+            //lê a resposta do servidor
             String respostaDoServidor = entrada.readLine();
             System.out.println("Resposta do servidor: " + respostaDoServidor);
             
-            if(respostaDoServidor.equals("Conectado")){
             
+            
+            if(respostaDoServidor.equals("Conectado")){
+                multicastIP = entrada.readLine();
+                System.out.println("IP lido: "+multicastIP);
+                
+                porta = entrada.readLine();
+                System.out.println("Porta lida: "+porta);
+                
                 //cria socket multicast
-                InetAddress multicastGroup = InetAddress.getByName("230.100.10.1");
-                MulticastSocket multiSock = new MulticastSocket(50000);
+                InetAddress multicastGroup = InetAddress.getByName(multicastIP);
+                MulticastSocket multiSock = new MulticastSocket(Integer.parseInt(porta));
                 multiSock.joinGroup(multicastGroup);
 
                 //thread loop de recebimento
@@ -60,7 +72,7 @@ public class UDPMulticast {
                 //cria looping de comunicaão
                 while(true){
                     //pedir ao usuário para digitar uma msg
-                    String txMsg = inBufferedReader.readLine();
+                    String txMsg = in.readLine();
 
                     if(txMsg.equals("<close>")){
                         multiSock.leaveGroup(multicastGroup);
