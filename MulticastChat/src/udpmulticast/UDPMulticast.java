@@ -45,8 +45,6 @@ public class UDPMulticast {
             String respostaDoServidor = entrada.readLine();
             System.out.println("Resposta do servidor: " + respostaDoServidor);
             
-            
-            
             if(respostaDoServidor.equals("Conectado")){
                 multicastIP = entrada.readLine();
                 System.out.println("IP lido: "+multicastIP);
@@ -95,8 +93,8 @@ public class UDPMulticast {
                     multiSock.send(txPkt);
                 }
             } else {
-                System.out.println("Erro ao conectar");
-                // Fecha o socket do cliente
+                System.err.println("Erro ao conectar");
+                //Fecha o socket do cliente
                 //clienteSocket.close();
             }  
             
