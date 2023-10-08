@@ -1,4 +1,4 @@
-# Chat Multicast Criptgrafado
+# Chat Multicast Criptografado
 
 Um algoritmo que implementa um sistema de comunicação (chat) baseado no
 protocolo multicast. As comunicações com o grupo multicast devem ser protegidas
