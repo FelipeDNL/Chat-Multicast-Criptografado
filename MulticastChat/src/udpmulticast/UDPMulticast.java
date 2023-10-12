@@ -2,7 +2,11 @@
 package udpmulticast;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -11,6 +15,7 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -25,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.crypto.Cipher;
 import org.json.*;
 
 public class UDPMulticast {
@@ -32,7 +38,7 @@ public class UDPMulticast {
     public static void main(String[] args) throws Exception{
         
         JSONObject obj = new JSONObject();
-        String multicastIP, porta;
+        JSONObject objServidor = new JSONObject();
         
         //String chave = "fZMyRo5fUEAz5mUCrfnpLKoIlz5TSTF7";
         //https://www.javacodegeeks.com/2018/03/aes-encryption-and-decryption-in-javacbc-mode.html
@@ -41,8 +47,8 @@ public class UDPMulticast {
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
         
         //criar chaves
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("DSA", "SUN");
-        SecureRandom random = SecureRandom.getInstance("SHA1PRNG", "SUN");
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
         keyGen.initialize(1024, random);
 
         KeyPair pair = keyGen.generateKeyPair();
@@ -56,33 +62,30 @@ public class UDPMulticast {
             Socket clienteSocket = new Socket("localhost", 12345);
             
             //cria um fluxo de entrada para receber dados do servidor
-            BufferedReader entrada = new BufferedReader(new InputStreamReader(clienteSocket.getInputStream()));
+            DataInputStream entrada = new DataInputStream(clienteSocket.getInputStream());
 
             //cria um fluxo de saída para enviar dados para o servidor
-            PrintWriter saida = new PrintWriter(clienteSocket.getOutputStream(), true);
+            DataOutputStream saida = new DataOutputStream(clienteSocket.getOutputStream());
             
             //enviando chave publica do usuario em formato txt
-            String pubUsuarioTxt = Base64.getEncoder().encodeToString(pubUsuario.getEncoded());
-            saida.println(pubUsuarioTxt);
+            String pubUsu = Base64.getEncoder().encodeToString(pubUsuario.getEncoded());
+            saida.writeUTF(pubUsu);
             
             //recebendo chave publica do servidor
-            PublicKey keyServer = pair.getPublic();
-            keyServer = stringParaPublicKey(entrada.readLine());
-
-            //lê a resposta do servidor
-            String respostaDoServidor = entrada.readLine();
-            System.out.println("Resposta do servidor: " + respostaDoServidor);
+            PublicKey keyServer = stringParaPublicKey(entrada.readUTF());
+            System.out.println("Chave servidor: "+keyServer);
+            System.out.println("Chave usuario: "+pubUsuario);
+            
+            byte[] bytes = entrada.readAllBytes();
+            String respostaDoServidor = new String(bytes, StandardCharsets.UTF_8);
+            
+            JSONObject resposta = new JSONObject(entrada.readUTF());
             
             if(respostaDoServidor.equals("Conectado")){
-                multicastIP = entrada.readLine();
-                System.out.println("IP recebido: "+multicastIP);
-                
-                porta = entrada.readLine();
-                System.out.println("Porta recebida: "+porta);
                 
                 //cria socket multicast
-                InetAddress multicastGroup = InetAddress.getByName(multicastIP);
-                MulticastSocket multiSock = new MulticastSocket(Integer.parseInt(porta));
+                InetAddress multicastGroup = InetAddress.getByName(resposta.getString("IP"));
+                MulticastSocket multiSock = new MulticastSocket(resposta.getInt("Porta"));
                 multiSock.joinGroup(multicastGroup);
 
                 //thread loop de recebimento
@@ -91,6 +94,7 @@ public class UDPMulticast {
 
                 //avisa que o programa esta rodando
                 System.out.println("Starting UDPMulticast...\n\tServer address: "+multicastGroup);
+                System.out.print("Digite uma mensagem: ");
 
                 //cria buffers de comunicação
                 byte[] txData = new byte[65507];
@@ -135,6 +139,7 @@ public class UDPMulticast {
     private static PublicKey stringParaPublicKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
         byte[] chavePublicaBytes = Base64.getDecoder().decode(key);
         X509EncodedKeySpec chaveSpec = new X509EncodedKeySpec(chavePublicaBytes);
+        
         KeyFactory keyFactory = KeyFactory.getInstance("DSA");
         PublicKey chavePublicaRecebida = keyFactory.generatePublic(chaveSpec);   
         
