@@ -15,20 +15,19 @@ import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
-import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -39,14 +38,18 @@ public class ServidorTCP {
         JSONObject obj = new JSONObject();
 
         try {
-            //criar chaves
+            //criar chaves assimetricas
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-            SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-            keyGen.initialize(1024, random);
+            keyGen.initialize(1024);
             
             KeyPair pair = keyGen.generateKeyPair();
             PrivateKey privServer = pair.getPrivate();
             PublicKey pubServer = pair.getPublic();
+            
+            //chave simetrica
+            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
+            keyGenerator.init(256);
+            SecretKey symmetricKey = keyGenerator.generateKey();
             
             System.out.println("Chave servidor: "+pubServer);
 
@@ -70,37 +73,43 @@ public class ServidorTCP {
                 saida.writeUTF(pubkey);
                 
                 //recebendo chave publica do usuario
-                PublicKey keyUsuario = stringParaPublicKey(entrada.readUTF());
-                System.out.println("Chave Server: "+pubServer);
-                System.out.println("Chave usuario: "+keyUsuario);
-                
-                String conectado = "Conectado";
-                saida.write(cifrarString(conectado, keyUsuario));
-
+                String chaveRecebida = entrada.readUTF();
+                PublicKey keyUsuario = stringParaPublicKey(chaveRecebida);
                 
                 //envia IP/porta e chave simétrica
                 {
+                    obj.put("Status", "Conectado");
                     obj.put("IP", "230.100.10.1");
                     obj.put("Porta", 50000);
                     obj.put("Chave", 1);
                 }
+                
+                byte[] jsonData = obj.toString().getBytes();
+                
+                Cipher symmetricCipher = Cipher.getInstance("AES");
+                symmetricCipher.init(Cipher.ENCRYPT_MODE, symmetricKey);
+                byte[] encryptedJsonData = symmetricCipher.doFinal(jsonData);
+                
+                saida.writeInt(encryptedJsonData.length);
+                saida.write(encryptedJsonData);
+                
+                Cipher asymmetricCipher = Cipher.getInstance("RSA");
+                asymmetricCipher.init(Cipher.ENCRYPT_MODE, keyUsuario);
+                byte[] encryptedSymmetricKey = asymmetricCipher.doFinal(symmetricKey.getEncoded());
+                
+                saida.writeInt(encryptedSymmetricKey.length);
+                saida.write(encryptedSymmetricKey);
+                
+                
+                
                 saida.writeUTF(obj.toString());
 
                 //fecha o socket do cliente
                 //clienteSocket.close();
             }
         } catch (IOException e) {
-        } catch (NoSuchAlgorithmException | JSONException ex) {
-            Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (InvalidKeySpecException ex) {
-            Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (IllegalBlockSizeException ex) {
-            Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (BadPaddingException ex) {
-            Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (InvalidKeyException ex) {
-            Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (NoSuchPaddingException ex) {
+        } catch (NoSuchAlgorithmException | JSONException | InvalidKeySpecException | 
+                NoSuchPaddingException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException  ex) {
             Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
@@ -108,30 +117,11 @@ public class ServidorTCP {
     private static PublicKey stringParaPublicKey(String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
         byte[] publicBytes = Base64.getDecoder().decode(key);
         X509EncodedKeySpec keySpec = new X509EncodedKeySpec(publicBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance("DSA");
+        
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PublicKey chavePublicaRecebida = keyFactory.generatePublic(keySpec);   
         
         return chavePublicaRecebida;
-    }
-    
-    private static byte[] cifrarString(String texto, PublicKey key) throws 
-            IllegalBlockSizeException, BadPaddingException, InvalidKeyException, NoSuchAlgorithmException, NoSuchPaddingException{
-        
-        //Creating a Cipher object
-        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-
-        //Initializing a Cipher object
-        cipher.init(Cipher.ENCRYPT_MODE, key);
-
-        //responde ao cliente
-        byte[] respostaAoCliente = texto.getBytes();
-        cipher.update(respostaAoCliente);
-
-        //Encrypting the data
-        byte[] cipherText = cipher.doFinal();
-        
-        return cipherText;
-        
     }
     
 }

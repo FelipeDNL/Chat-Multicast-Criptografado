@@ -16,6 +16,7 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -30,7 +31,12 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import org.json.*;
 
 public class UDPMulticast {
@@ -39,9 +45,6 @@ public class UDPMulticast {
         
         JSONObject obj = new JSONObject();
         JSONObject objServidor = new JSONObject();
-        
-        //String chave = "fZMyRo5fUEAz5mUCrfnpLKoIlz5TSTF7";
-        //https://www.javacodegeeks.com/2018/03/aes-encryption-and-decryption-in-javacbc-mode.html
         
         //cria buffer de comunicação para chat
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
@@ -72,17 +75,32 @@ public class UDPMulticast {
             saida.writeUTF(pubUsu);
             
             //recebendo chave publica do servidor
-            PublicKey keyServer = stringParaPublicKey(entrada.readUTF());
-            System.out.println("Chave servidor: "+keyServer);
-            System.out.println("Chave usuario: "+pubUsuario);
+            String chaveRecebida = entrada.readUTF();
+            PublicKey keyServer = stringParaPublicKey(chaveRecebida);
             
-            byte[] bytes = entrada.readAllBytes();
-            String respostaDoServidor = new String(bytes, StandardCharsets.UTF_8);
+            int length = entrada.readInt();
+            byte[] dataCifrada = new byte[length];
+            entrada.readFully(dataCifrada, 0, dataCifrada.length);
             
-            JSONObject resposta = new JSONObject(entrada.readUTF());
+            int length1 = entrada.readInt();
+            byte[] chaveAsi = new byte[length1];
+            entrada.readFully(chaveAsi, 0, chaveAsi.length);
             
-            if(respostaDoServidor.equals("Conectado")){
-                
+            
+            Cipher asymmetricCipher = Cipher.getInstance("RSA");
+            asymmetricCipher.init(Cipher.DECRYPT_MODE, privUsuario);
+            byte[] chaveDecifrada = asymmetricCipher.doFinal(chaveAsi);
+            
+            byte[] keyBytes = chaveDecifrada;
+            SecretKey chaveSimetrica = new SecretKeySpec(keyBytes, "AES");
+            
+            Cipher dadosDecifrados = Cipher.getInstance("AES");
+            dadosDecifrados.init(Cipher.DECRYPT_MODE, chaveSimetrica);
+            byte[] jsonDecifrada = dadosDecifrados.doFinal(dataCifrada);
+            
+            JSONObject resposta = new JSONObject(new String(jsonDecifrada));
+            
+            if(resposta.getString("Status").equals("Conectado")){   
                 //cria socket multicast
                 InetAddress multicastGroup = InetAddress.getByName(resposta.getString("IP"));
                 MulticastSocket multiSock = new MulticastSocket(resposta.getInt("Porta"));
@@ -124,12 +142,7 @@ public class UDPMulticast {
                     //envia a msg
                     multiSock.send(txPkt);
                 }
-            } else {
-                System.err.println("Erro ao conectar");
-                //Fecha o socket do cliente
-                //clienteSocket.close();
-            }  
-            
+            }
         } catch (IOException | NumberFormatException e){
             System.out.println(e.toString());
         }
@@ -140,10 +153,11 @@ public class UDPMulticast {
         byte[] chavePublicaBytes = Base64.getDecoder().decode(key);
         X509EncodedKeySpec chaveSpec = new X509EncodedKeySpec(chavePublicaBytes);
         
-        KeyFactory keyFactory = KeyFactory.getInstance("DSA");
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PublicKey chavePublicaRecebida = keyFactory.generatePublic(chaveSpec);   
         
         return chavePublicaRecebida;
     }
+    
    
 }
