@@ -10,6 +10,7 @@ package serverchaves;
  */
 import java.io.*;
 import java.net.*;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -17,7 +18,9 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
+import java.security.spec.KeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.logging.Level;
@@ -28,13 +31,16 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 public class ServidorTCP {
     public static void main(String[] args){
         //porta em que o servidor irá ouvir as conexões
-        int porta = 12345;
         JSONObject obj = new JSONObject();
 
         try {
@@ -48,14 +54,16 @@ public class ServidorTCP {
             
             //chave simetrica
             KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
+            
             keyGenerator.init(256);
             SecretKey symmetricKey = keyGenerator.generateKey();
+            SecretKey chaveChat = gerarChave("sus", 50);
             
             System.out.println("Chave servidor: "+pubServer);
 
             //cria um servidor socket que escuta na porta especificada
-            ServerSocket servidorSocket = new ServerSocket(porta);
-            System.out.println("Servidor TCP esperando conexões na porta " + porta);
+            ServerSocket servidorSocket = new ServerSocket(12345);
+            System.out.println("Servidor TCP esperando conexões na porta.... 12345");
 
             while (true) {
                 //aguarda por uma conexão de cliente
@@ -81,7 +89,7 @@ public class ServidorTCP {
                     obj.put("Status", "Conectado");
                     obj.put("IP", "230.100.10.1");
                     obj.put("Porta", 50000);
-                    obj.put("Chave", 1);
+                    obj.put("Chave", chaveChat.toString());
                 }
                 
                 byte[] jsonData = obj.toString().getBytes();
@@ -99,10 +107,6 @@ public class ServidorTCP {
                 
                 saida.writeInt(encryptedSymmetricKey.length);
                 saida.write(encryptedSymmetricKey);
-                
-                
-                
-                saida.writeUTF(obj.toString());
 
                 //fecha o socket do cliente
                 //clienteSocket.close();
@@ -122,6 +126,25 @@ public class ServidorTCP {
         PublicKey chavePublicaRecebida = keyFactory.generatePublic(keySpec);   
         
         return chavePublicaRecebida;
+    }
+    
+    private static SecretKey gerarChave (String password, int iteracoes){
+        SecretKey aesKey = null; 
+        
+        try {
+            byte[] salt = new byte[16]; // Generate a random salt
+            SecureRandom secureRandom = new SecureRandom();
+            secureRandom.nextBytes(salt);
+            
+            KeySpec keySpec = new PBEKeySpec(password.toCharArray(), salt, iteracoes, 256);
+            SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            SecretKey secretKey = keyFactory.generateSecret(keySpec);
+            aesKey = new SecretKeySpec(secretKey.getEncoded(), "AES");
+        } catch (NoSuchAlgorithmException | InvalidKeySpecException ex) {
+            Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        return aesKey;
     }
     
 }

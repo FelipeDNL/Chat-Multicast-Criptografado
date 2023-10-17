@@ -116,6 +116,9 @@ public class UDPMulticast {
 
                 //cria buffers de comunicação
                 byte[] txData = new byte[65507];
+                
+                String chave = resposta.getString("Chave");
+                SecretKey chaveChat = stringParaPublicKey(chave);
 
                 //cria looping de comunicaão
                 while(true){
@@ -137,8 +140,8 @@ public class UDPMulticast {
                     txData = obj.toString().getBytes();
 
                     //cria o pacote de envio
-                    DatagramPacket txPkt = new DatagramPacket(txData, txData.length, multicastGroup, 50000);
-
+                    DatagramPacket txPkt = new DatagramPacket(txData, txData.length, multicastGroup, resposta.getInt("Porta"));
+                    
                     //envia a msg
                     multiSock.send(txPkt);
                 }
@@ -149,12 +152,22 @@ public class UDPMulticast {
                 
     }
     
-    private static PublicKey stringParaPublicKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
+    private static PublicKey stringParaKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
         byte[] chavePublicaBytes = Base64.getDecoder().decode(key);
         X509EncodedKeySpec chaveSpec = new X509EncodedKeySpec(chavePublicaBytes);
         
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PublicKey chavePublicaRecebida = keyFactory.generatePublic(chaveSpec);   
+        
+        return chavePublicaRecebida;
+    }
+    
+    private static SecretKey stringParaSecretKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
+        byte[] chavePublicaBytes = Base64.getDecoder().decode(key);
+        KeySpec keySpec = new PBEKeySpec(password.toCharArray(), salt, iterationCount, keyLength);
+        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        SecretKey secretKey = keyFactory.generateSecret(keySpec);
+        return new SecretKeySpec(secretKey.getEncoded(), "AES");
         
         return chavePublicaRecebida;
     }
