@@ -99,6 +99,7 @@ public class UDPMulticast {
             byte[] jsonDecifrada = dadosDecifrados.doFinal(dataCifrada);
             
             JSONObject resposta = new JSONObject(new String(jsonDecifrada));
+            //
             
             if(resposta.getString("Status").equals("Conectado")){   
                 //cria socket multicast

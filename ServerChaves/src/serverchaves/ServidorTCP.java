@@ -91,6 +91,7 @@ public class ServidorTCP {
                     obj.put("Porta", 50000);
                     obj.put("Chave", chaveChat.toString());
                 }
+                //
                 
                 byte[] jsonData = obj.toString().getBytes();
                 
