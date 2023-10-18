@@ -98,17 +98,21 @@ public class UDPMulticast {
             dadosDecifrados.init(Cipher.DECRYPT_MODE, chaveSimetrica);
             byte[] jsonDecifrada = dadosDecifrados.doFinal(dataCifrada);
             
-            JSONObject resposta = new JSONObject(new String(jsonDecifrada));
+            JSONObject jsonRecebido = new JSONObject(new String(jsonDecifrada));
             //
             
-            if(resposta.getString("Status").equals("Conectado")){   
+            if(jsonRecebido.getString("Status").equals("Conectado")){   
                 //cria socket multicast
-                InetAddress multicastGroup = InetAddress.getByName(resposta.getString("IP"));
-                MulticastSocket multiSock = new MulticastSocket(resposta.getInt("Porta"));
+                InetAddress multicastGroup = InetAddress.getByName(jsonRecebido.getString("IP"));
+                MulticastSocket multiSock = new MulticastSocket(jsonRecebido.getInt("Porta"));
                 multiSock.joinGroup(multicastGroup);
+                
+                String chave = jsonRecebido.getString("Chave");
+                String encodedKey = Base64.getEncoder().encodeToString(chave.getBytes());
+                SecretKey chaveChat = stringParaSecretKey(encodedKey);
 
                 //thread loop de recebimento
-                Connection receive = new Connection(multiSock);
+                Connection receive = new Connection(multiSock, chaveChat);
                 receive.start();
 
                 //avisa que o programa esta rodando
@@ -118,9 +122,6 @@ public class UDPMulticast {
                 //cria buffers de comunicação
                 byte[] txData = new byte[65507];
                 
-                String chave = resposta.getString("Chave");
-                SecretKey chaveChat = stringParaPublicKey(chave);
-
                 //cria looping de comunicaão
                 while(true){
                     //pedir ao usuário para digitar uma msg
@@ -141,10 +142,17 @@ public class UDPMulticast {
                     txData = obj.toString().getBytes();
 
                     //cria o pacote de envio
-                    DatagramPacket txPkt = new DatagramPacket(txData, txData.length, multicastGroup, resposta.getInt("Porta"));
+                    DatagramPacket txPkt = new DatagramPacket(txData, txData.length, multicastGroup, jsonRecebido.getInt("Porta"));
                     
+                    Cipher symmetricCipher = Cipher.getInstance("AES");
+                    symmetricCipher.init(Cipher.ENCRYPT_MODE, chaveChat);
+                    byte[] originalData = txPkt.getData();
+                    byte[] encryptedData = symmetricCipher.doFinal(originalData);
+                    
+                    DatagramPacket encryptedPacket = new DatagramPacket(encryptedData, encryptedData.length, txPkt.getAddress(), txPkt.getPort());
+
                     //envia a msg
-                    multiSock.send(txPkt);
+                    multiSock.send(encryptedPacket);
                 }
             }
         } catch (IOException | NumberFormatException e){
@@ -153,10 +161,9 @@ public class UDPMulticast {
                 
     }
     
-    private static PublicKey stringParaKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
+    private static PublicKey stringParaPublicKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
         byte[] chavePublicaBytes = Base64.getDecoder().decode(key);
         X509EncodedKeySpec chaveSpec = new X509EncodedKeySpec(chavePublicaBytes);
-        
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PublicKey chavePublicaRecebida = keyFactory.generatePublic(chaveSpec);   
         
@@ -164,13 +171,10 @@ public class UDPMulticast {
     }
     
     private static SecretKey stringParaSecretKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
-        byte[] chavePublicaBytes = Base64.getDecoder().decode(key);
-        KeySpec keySpec = new PBEKeySpec(password.toCharArray(), salt, iterationCount, keyLength);
-        SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        SecretKey secretKey = keyFactory.generateSecret(keySpec);
-        return new SecretKeySpec(secretKey.getEncoded(), "AES");
+        byte[] chaveSecretaBytes = Base64.getDecoder().decode(key);
+        SecretKey aesKey = new SecretKeySpec(chaveSecretaBytes, 0, chaveSecretaBytes.length, "AES");
         
-        return chavePublicaRecebida;
+        return aesKey;
     }
     
    

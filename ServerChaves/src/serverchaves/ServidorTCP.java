@@ -89,9 +89,8 @@ public class ServidorTCP {
                     obj.put("Status", "Conectado");
                     obj.put("IP", "230.100.10.1");
                     obj.put("Porta", 50000);
-                    obj.put("Chave", chaveChat.toString());
+                    obj.put("Chave", chaveChat);
                 }
-                //
                 
                 byte[] jsonData = obj.toString().getBytes();
                 
