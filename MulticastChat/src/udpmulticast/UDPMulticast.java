@@ -2,39 +2,22 @@
 package udpmulticast;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.PrintWriter;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
-import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
-import java.security.SecureRandom;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.X509EncodedKeySpec;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import org.json.*;
@@ -44,21 +27,17 @@ public class UDPMulticast {
     public static void main(String[] args) throws Exception{
         
         JSONObject obj = new JSONObject();
-        JSONObject objServidor = new JSONObject();
         
         //cria buffer de comunicação para chat
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
         
         //criar chaves
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-        SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-        keyGen.initialize(1024, random);
+        keyGen.initialize(1024);
 
         KeyPair pair = keyGen.generateKeyPair();
         PrivateKey privUsuario = pair.getPrivate();
         PublicKey pubUsuario = pair.getPublic();
-        
-        System.out.println("Chave usuario: "+pubUsuario);
         
         try {
             //cria um socket para se conectar ao servidor
@@ -74,42 +53,38 @@ public class UDPMulticast {
             String pubUsu = Base64.getEncoder().encodeToString(pubUsuario.getEncoded());
             saida.writeUTF(pubUsu);
             
-            //recebendo chave publica do servidor
-            String chaveRecebida = entrada.readUTF();
-            PublicKey keyServer = stringParaPublicKey(chaveRecebida);
+            //dados
+            int tamanho = entrada.readInt();
+            byte[] dadosCifrados = new byte[tamanho];
+            entrada.readFully(dadosCifrados, 0, dadosCifrados.length);
             
-            int length = entrada.readInt();
-            byte[] dataCifrada = new byte[length];
-            entrada.readFully(dataCifrada, 0, dataCifrada.length);
-            
-            int length1 = entrada.readInt();
-            byte[] chaveAsi = new byte[length1];
+            //chave
+            int tamanho1 = entrada.readInt();
+            byte[] chaveAsi = new byte[tamanho1];
             entrada.readFully(chaveAsi, 0, chaveAsi.length);
             
+            //fechando fluxos
+            entrada.close();
+            saida.close();
+            clienteSocket.close();
             
-            Cipher asymmetricCipher = Cipher.getInstance("RSA");
-            asymmetricCipher.init(Cipher.DECRYPT_MODE, privUsuario);
-            byte[] chaveDecifrada = asymmetricCipher.doFinal(chaveAsi);
+            //decifra chave simétrica
+            Cipher decifrarChave = Cipher.getInstance("RSA");
+            decifrarChave.init(Cipher.DECRYPT_MODE, privUsuario);
+            byte[] bytesChaveDecifrada = decifrarChave.doFinal(chaveAsi);
+            SecretKey chaveSimetricaDeci = new SecretKeySpec(bytesChaveDecifrada, "AES");
             
-            byte[] keyBytes = chaveDecifrada;
-            SecretKey chaveSimetrica = new SecretKeySpec(keyBytes, "AES");
-            
-            Cipher dadosDecifrados = Cipher.getInstance("AES");
-            dadosDecifrados.init(Cipher.DECRYPT_MODE, chaveSimetrica);
-            byte[] jsonDecifrada = dadosDecifrados.doFinal(dataCifrada);
-            
+            Cipher decifrarDados = Cipher.getInstance("AES");
+            decifrarDados.init(Cipher.DECRYPT_MODE, chaveSimetricaDeci);
+            byte[] jsonDecifrada = decifrarDados.doFinal(dadosCifrados);
             JSONObject jsonRecebido = new JSONObject(new String(jsonDecifrada));
-            //
             
             if(jsonRecebido.getString("Status").equals("Conectado")){   
                 //cria socket multicast
                 InetAddress multicastGroup = InetAddress.getByName(jsonRecebido.getString("IP"));
                 MulticastSocket multiSock = new MulticastSocket(jsonRecebido.getInt("Porta"));
                 multiSock.joinGroup(multicastGroup);
-                
-                String chave = jsonRecebido.getString("Chave");
-                String encodedKey = Base64.getEncoder().encodeToString(chave.getBytes());
-                SecretKey chaveChat = stringParaSecretKey(encodedKey);
+                SecretKey chaveChat = stringParaSecretKey(jsonRecebido.getString("Chave"));
 
                 //thread loop de recebimento
                 Connection receive = new Connection(multiSock, chaveChat);
@@ -135,24 +110,22 @@ public class UDPMulticast {
                     //cria JSON
                     {
                     obj.put("date", LocalDate.now());
-                    obj.put("name", "Lopes");
+                    obj.put("name", "Felipe");
                     obj.put("time", LocalDateTime.now());
                     obj.put("message", txMsg);
                     }
                     txData = obj.toString().getBytes();
+                    
+                    //cifrar dados json
+                    Cipher cipher = Cipher.getInstance("AES");
+                    cipher.init(Cipher.ENCRYPT_MODE, chaveChat);
+                    byte[] encryptedData = cipher.doFinal(txData);
 
-                    //cria o pacote de envio
-                    DatagramPacket txPkt = new DatagramPacket(txData, txData.length, multicastGroup, jsonRecebido.getInt("Porta"));
-                    
-                    Cipher symmetricCipher = Cipher.getInstance("AES");
-                    symmetricCipher.init(Cipher.ENCRYPT_MODE, chaveChat);
-                    byte[] originalData = txPkt.getData();
-                    byte[] encryptedData = symmetricCipher.doFinal(originalData);
-                    
-                    DatagramPacket encryptedPacket = new DatagramPacket(encryptedData, encryptedData.length, txPkt.getAddress(), txPkt.getPort());
+                    //criar payload
+                    DatagramPacket packet = new DatagramPacket(encryptedData, encryptedData.length, multicastGroup, jsonRecebido.getInt("Porta"));
 
                     //envia a msg
-                    multiSock.send(encryptedPacket);
+                    multiSock.send(packet);
                 }
             }
         } catch (IOException | NumberFormatException e){
@@ -161,20 +134,11 @@ public class UDPMulticast {
                 
     }
     
-    private static PublicKey stringParaPublicKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
-        byte[] chavePublicaBytes = Base64.getDecoder().decode(key);
-        X509EncodedKeySpec chaveSpec = new X509EncodedKeySpec(chavePublicaBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PublicKey chavePublicaRecebida = keyFactory.generatePublic(chaveSpec);   
-        
-        return chavePublicaRecebida;
-    }
-    
-    private static SecretKey stringParaSecretKey (String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
-        byte[] chaveSecretaBytes = Base64.getDecoder().decode(key);
-        SecretKey aesKey = new SecretKeySpec(chaveSecretaBytes, 0, chaveSecretaBytes.length, "AES");
-        
-        return aesKey;
+    private static SecretKey stringParaSecretKey (String chave) {
+            byte[] chaveSecretaBytes = Base64.getDecoder().decode(chave);
+            SecretKey chaveAES = new SecretKeySpec(chaveSecretaBytes, 0, chaveSecretaBytes.length, "AES");
+
+            return chaveAES;
     }
     
    

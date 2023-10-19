@@ -1,7 +1,4 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
+
 package serverchaves;
 
 /**
@@ -10,7 +7,6 @@ package serverchaves;
  */
 import java.io.*;
 import java.net.*;
-import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -32,7 +28,6 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.json.JSONException;
@@ -48,18 +43,17 @@ public class ServidorTCP {
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
             keyGen.initialize(1024);
             
-            KeyPair pair = keyGen.generateKeyPair();
-            PrivateKey privServer = pair.getPrivate();
-            PublicKey pubServer = pair.getPublic();
+            KeyPair par = keyGen.generateKeyPair();
+            PrivateKey privServer = par.getPrivate();
+            PublicKey pubServer = par.getPublic();
             
             //chave simetrica
             KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
-            
             keyGenerator.init(256);
-            SecretKey symmetricKey = keyGenerator.generateKey();
-            SecretKey chaveChat = gerarChave("sus", 50);
+            SecretKey chaveSimetrica = keyGenerator.generateKey();
             
-            System.out.println("Chave servidor: "+pubServer);
+            //chama método
+            SecretKey chaveChat = gerarChave("sus", 50);
 
             //cria um servidor socket que escuta na porta especificada
             ServerSocket servidorSocket = new ServerSocket(12345);
@@ -84,67 +78,82 @@ public class ServidorTCP {
                 String chaveRecebida = entrada.readUTF();
                 PublicKey keyUsuario = stringParaPublicKey(chaveRecebida);
                 
+                //chave simétrica para chat
+                String chaveChatString = Base64.getEncoder().encodeToString(chaveChat.getEncoded());
+                
                 //envia IP/porta e chave simétrica
                 {
                     obj.put("Status", "Conectado");
                     obj.put("IP", "230.100.10.1");
                     obj.put("Porta", 50000);
-                    obj.put("Chave", chaveChat);
+                    obj.put("Chave", chaveChatString);
                 }
+                byte[] dadosJson = obj.toString().getBytes();
                 
-                byte[] jsonData = obj.toString().getBytes();
+                //cifrando com chave simetrica
+                Cipher cifraSimetrica = Cipher.getInstance("AES");
+                cifraSimetrica.init(Cipher.ENCRYPT_MODE, chaveSimetrica);
+                byte[] dadosJsonCifrados = cifraSimetrica.doFinal(dadosJson);
                 
-                Cipher symmetricCipher = Cipher.getInstance("AES");
-                symmetricCipher.init(Cipher.ENCRYPT_MODE, symmetricKey);
-                byte[] encryptedJsonData = symmetricCipher.doFinal(jsonData);
+                saida.writeInt(dadosJsonCifrados.length);
+                saida.write(dadosJsonCifrados);
                 
-                saida.writeInt(encryptedJsonData.length);
-                saida.write(encryptedJsonData);
+                //cifrando chave simétrica, assimetricamente
+                Cipher cifraAssimetrica = Cipher.getInstance("RSA");
+                cifraAssimetrica.init(Cipher.ENCRYPT_MODE, keyUsuario);
+                byte[] chaveSimetricaCifrada = cifraAssimetrica.doFinal(chaveSimetrica.getEncoded());
                 
-                Cipher asymmetricCipher = Cipher.getInstance("RSA");
-                asymmetricCipher.init(Cipher.ENCRYPT_MODE, keyUsuario);
-                byte[] encryptedSymmetricKey = asymmetricCipher.doFinal(symmetricKey.getEncoded());
-                
-                saida.writeInt(encryptedSymmetricKey.length);
-                saida.write(encryptedSymmetricKey);
+                saida.writeInt(chaveSimetricaCifrada.length);
+                saida.write(chaveSimetricaCifrada);
 
-                //fecha o socket do cliente
-                //clienteSocket.close();
+                //fecha fluxos do cliente
+                entrada.close();
+                saida.close();
+                clienteSocket.close();
             }
         } catch (IOException e) {
-        } catch (NoSuchAlgorithmException | JSONException | InvalidKeySpecException | 
+        } catch (NoSuchAlgorithmException | JSONException | 
                 NoSuchPaddingException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException  ex) {
             Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
     
-    private static PublicKey stringParaPublicKey(String key) throws NoSuchAlgorithmException, InvalidKeySpecException{
-        byte[] publicBytes = Base64.getDecoder().decode(key);
-        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(publicBytes);
+    private static PublicKey stringParaPublicKey(String chave) {
+        PublicKey chavePublicaRecebida = null;
         
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PublicKey chavePublicaRecebida = keyFactory.generatePublic(keySpec);   
+        try {
+            
+            byte[] chavePublicaBytes = Base64.getDecoder().decode(chave);
+            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(chavePublicaBytes);
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            chavePublicaRecebida = keyFactory.generatePublic(keySpec);
+            
+        } catch (NoSuchAlgorithmException | InvalidKeySpecException ex) {
+            Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
+        }
         
         return chavePublicaRecebida;
     }
     
     private static SecretKey gerarChave (String password, int iteracoes){
-        SecretKey aesKey = null; 
+        SecretKey chaveAES = null; 
         
         try {
-            byte[] salt = new byte[16]; // Generate a random salt
-            SecureRandom secureRandom = new SecureRandom();
-            secureRandom.nextBytes(salt);
             
-            KeySpec keySpec = new PBEKeySpec(password.toCharArray(), salt, iteracoes, 256);
+            byte[] iv = new byte[16];
+            SecureRandom secureRandom = new SecureRandom();
+            secureRandom.nextBytes(iv);
+            
+            KeySpec keySpec = new PBEKeySpec(password.toCharArray(), iv, iteracoes, 256);
             SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-            SecretKey secretKey = keyFactory.generateSecret(keySpec);
-            aesKey = new SecretKeySpec(secretKey.getEncoded(), "AES");
+            SecretKey chaveSimetrica = keyFactory.generateSecret(keySpec);
+            chaveAES = new SecretKeySpec(chaveSimetrica.getEncoded(), "AES");
+            
         } catch (NoSuchAlgorithmException | InvalidKeySpecException ex) {
             Logger.getLogger(ServidorTCP.class.getName()).log(Level.SEVERE, null, ex);
         }
         
-        return aesKey;
+        return chaveAES;
     }
     
 }
