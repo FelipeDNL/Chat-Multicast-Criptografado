@@ -17,6 +17,7 @@ import java.security.PublicKey;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Scanner;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -25,7 +26,7 @@ import org.json.*;
 public class UDPMulticast {
 
     public static void main(String[] args) throws Exception{
-        
+        Scanner input = new Scanner(System.in);
         JSONObject obj = new JSONObject();
         
         //cria buffer de comunicação para chat
@@ -54,13 +55,13 @@ public class UDPMulticast {
             saida.writeUTF(pubUsu);
             
             //dados
-            int tamanho = entrada.readInt();
-            byte[] dadosCifrados = new byte[tamanho];
+            int tamanhoDados = entrada.readInt();
+            byte[] dadosCifrados = new byte[tamanhoDados];
             entrada.readFully(dadosCifrados, 0, dadosCifrados.length);
             
             //chave
-            int tamanho1 = entrada.readInt();
-            byte[] chaveAsi = new byte[tamanho1];
+            int tamanhoChave = entrada.readInt();
+            byte[] chaveAsi = new byte[tamanhoChave];
             entrada.readFully(chaveAsi, 0, chaveAsi.length);
             
             //fechando fluxos
@@ -97,6 +98,9 @@ public class UDPMulticast {
                 //cria buffers de comunicação
                 byte[] txData = new byte[65507];
                 
+                System.out.print("Digite seu nome: ");
+                String nome = input.nextLine();
+                
                 //cria looping de comunicaão
                 while(true){
                     //pedir ao usuário para digitar uma msg
@@ -110,7 +114,7 @@ public class UDPMulticast {
                     //cria JSON
                     {
                     obj.put("date", LocalDate.now());
-                    obj.put("name", "Felipe");
+                    obj.put("name", nome);
                     obj.put("time", LocalDateTime.now());
                     obj.put("message", txMsg);
                     }

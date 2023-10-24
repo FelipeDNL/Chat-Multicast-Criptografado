@@ -57,7 +57,7 @@ public class ServidorTCP {
 
             //cria um servidor socket que escuta na porta especificada
             ServerSocket servidorSocket = new ServerSocket(12345);
-            System.out.println("Servidor TCP esperando conexões na porta.... 12345");
+            System.out.println("Servidor TCP esperando conexões na porta...." +servidorSocket.getLocalPort());
 
             while (true) {
                 //aguarda por uma conexão de cliente
@@ -109,7 +109,6 @@ public class ServidorTCP {
                 //fecha fluxos do cliente
                 entrada.close();
                 saida.close();
-                clienteSocket.close();
             }
         } catch (IOException e) {
         } catch (NoSuchAlgorithmException | JSONException | 
@@ -124,8 +123,11 @@ public class ServidorTCP {
         try {
             
             byte[] chavePublicaBytes = Base64.getDecoder().decode(chave);
+            
+            //usado para representar uma chave pública em um formato codificado em X.509 (certificado)
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(chavePublicaBytes);
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            
             chavePublicaRecebida = keyFactory.generatePublic(keySpec);
             
         } catch (NoSuchAlgorithmException | InvalidKeySpecException ex) {
@@ -141,11 +143,13 @@ public class ServidorTCP {
         try {
             
             byte[] iv = new byte[16];
-            SecureRandom secureRandom = new SecureRandom();
+            SecureRandom secureRandom = new SecureRandom(); //RNG
             secureRandom.nextBytes(iv);
             
+            //password based encryption
             KeySpec keySpec = new PBEKeySpec(password.toCharArray(), iv, iteracoes, 256);
             SecretKeyFactory keyFactory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            
             SecretKey chaveSimetrica = keyFactory.generateSecret(keySpec);
             chaveAES = new SecretKeySpec(chaveSimetrica.getEncoded(), "AES");
             
